@@ -1,26 +1,22 @@
-import random
-
 import pandas as pd
 import numpy as np
-from PIL import Image as im
+from PIL import Image as img
 from thinktank import init_random_network
+import time
 
+# classification of mnist digits via a fcnn with sgd + momentum
 df = pd.read_csv('data/mnist_train.csv')
 npa = df.to_numpy()
 np.random.shuffle(npa)
-images = [np.array([list(x[1::])]).transpose() for x in npa]
+# was encountering overflow errors so scaling is to avoid that
+images = [(1/256)*np.array([list(x[1::])]).transpose() for x in npa]
 labels = [np.array([[0,0,0,0,0,0,0,0,0,0]]).transpose() for i in range(len(images))]
 for i in range(len(images)):
     labels[i][npa[i][0]] = 1
 def show_image(imarr):
-    data = im.fromarray(imarr.reshape((int(np.sqrt(len(imarr))),int(np.sqrt(len(imarr))))).astype('uint8'))
+    data = img.fromarray(imarr.reshape((int(np.sqrt(len(imarr))),int(np.sqrt(len(imarr))))).astype('uint8'))
     data.show()
 
-
-# def percent_correct()
-# def down_sample(imarr):
-#     # 24x24 -> 12x12
-# approaching cos from a random initialised sigmoid nnetwork via sgd.
 # sigmoid
 active = np.vectorize(lambda x: 1/(1 + np.exp(-x)))
 dactive =np.vectorize(lambda x: (1/(1 + np.exp(-x))) * (1- (1/(1 + np.exp(-x)))))
@@ -45,9 +41,14 @@ def emp_risk(preddata, actualdata):
     # print([(x, y) for x, y in zip(preddata, actualdata)])
     return (1 / len(preddata)) * sum([loss(x, y) for x, y in zip(preddata, actualdata)])
 
-net = init_random_network([784,300,200,10], active, dactive, loss, dloss, linear_on_final=False,momentum_coef=9/10)
+net = init_random_network([784,400,300,10], active, dactive, loss, dloss, linear_on_final=False,momentum_coef=9/10)
 net.layers[-1].acvfn = sftmax
 net.layers[-1].deriv_acvfn = dsftmax
+
+with open("tt-mnist-classification-weights","r") as f:
+    wstr = f.read()
+
+# net.load_network_from_string(wstr)
 # batch size
 m = 1
 
@@ -60,17 +61,25 @@ def get_pred(x):
             pred = i
     return pred
 
-def percent_correct(predata, actualdata):
-    k = 0
-    for a,b in zip(predata,actualdata):
-        k+=int()
 # try:
-totalcorrect = 0
-for k in range(len(batchoutputs)):
-    net.sgd(batchinputs[k], batchoutputs[k], 0.01)
-    totalcorrect += int(get_pred(net.layers[-1].out) == get_pred(batchoutputs[k][-1]))
-    if (k+1)%100 == 0:
-        print(f"% correct at round {k+1}: {totalcorrect/(k+1)}")
+# totalcorrect = 0
+batchloss = 0
+m=500
+for step_size in [0.1,0.1,0.05,0.05,0.05]:
+    for k in range(len(batchoutputs)):
+        net.sgd(batchinputs[k], batchoutputs[k], step_size)
+        # totalcorrect += int(get_pred(net.layers[-1].out) == get_pred(batchoutputs[k][-1]))
+        batchloss += loss(net.layers[-1].out,batchoutputs[k][-1])
+        if (k+1)%m == 0:
+            print(f"loss in batch {k+1}: {batchloss/m}")
+            batchloss = 0
+
+# totalcorrect = 0
+# for k in range(len(batchoutputs)):
+#     net.sgd(batchinputs[k], batchoutputs[k], 0.05)
+#     totalcorrect += int(get_pred(net.layers[-1].out) == get_pred(batchoutputs[k][-1]))
+#     if (k+1)%500 == 0:
+#         print(f"% correct at step size 2, round {k+1}: {totalcorrect/(k+1)}")
 
 # test
 df = pd.read_csv('data/mnist_test.csv')
@@ -78,6 +87,10 @@ npa = df.to_numpy()
 correct = 0
 print("testing")
 for im in npa:
-    correct+=int(get_pred(net.compute(np.array([list(im[1::])]).transpose()))==im[0])
-
+    correct+=int(get_pred(net.compute((1/256)*np.array([list(im[1::])]).transpose()))==im[0])
+# save to text file
+wstr = net.dump_network_to_string()
+with open(f"tt-mnist-classification-weights{time.time()}","w") as f:
+    f.write(wstr)
+# currently 90%
 print(f"% correct on test data: {100*correct/len(npa)}")
